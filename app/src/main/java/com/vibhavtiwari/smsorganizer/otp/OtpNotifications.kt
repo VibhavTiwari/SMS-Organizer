@@ -78,7 +78,7 @@ internal class OtpNotifications(context: Context) {
                     .build()
                 // Omit the code entirely without opt-in, regardless of the phone's preview preferences.
                 val notification = if (showCode()) base()
-                    .setContentTitle("Verification code: $code")
+                    .setContentTitle("$code · verification code")
                     .setVisibility(Notification.VISIBILITY_PUBLIC)
                     .setPublicVersion(generic)
                     .build() else generic
