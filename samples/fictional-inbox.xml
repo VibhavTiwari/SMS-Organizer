@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<smses count="6">
+  <sms address="ZZ-EXBANK-T" date="1795604400000" type="1" body="INR 1,249.00 debited from your bank account via UPI. Fictional example."/>
+  <sms address="ZZ-EXBANK-S" date="1795604460000" type="1" body="Your verification code is 424242. Fictional example."/>
+  <sms address="ZZ-EXRAIL-S" date="1795604520000" type="1" body="Your train reservation is confirmed. Fictional PNR 9000000001."/>
+  <sms address="ZZ-EXPOWR-T" date="1795604580000" type="1" body="Your electricity bill is due on 05 Dec. Fictional amount INR 880."/>
+  <sms address="ZZ-EXSHOP-P" date="1795604640000" type="1" body="Get 40% off until Friday. Fictional example."/>
+  <sms address="Fictional contact" date="1795604700000" type="2" body="Got it. See you soon."/>
+</smses>
