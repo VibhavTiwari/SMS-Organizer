@@ -1,5 +1,5 @@
 plugins {
-    kotlin("multiplatform") version "2.1.20"
+    kotlin("multiplatform")
 }
 
 kotlin {
@@ -10,4 +10,10 @@ kotlin {
             implementation(kotlin("test"))
         }
     }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    sourceCompatibility = "17"
+    targetCompatibility = "17"
+    options.release.set(17)
 }

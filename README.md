@@ -23,3 +23,15 @@ gradle :organizer-core:jvmTest :app:lintDebug :app:assembleDebug
 ```
 
 Use synthetic test data in this repository. Never commit or upload a personal export or screenshot with message content.
+
+### Live messaging work in progress
+
+The native layer now knows how to page the system SMS inbox and save one complete
+inbound SMS, including multipart text. It checks ownership of the Android SMS
+role before system inbox access. This path is intentionally not registered in
+the manifest. It does not change the default app, request sensitive permissions,
+or route carrier messages to this build. Only the XML archive flow is usable.
+The shared core also distinguishes a partial outgoing SMS from a failed or
+unconfirmed one. It does not automatically retry any send, and it does not
+claim carrier acceptance is a delivery receipt. The device send path is not
+switched on.
