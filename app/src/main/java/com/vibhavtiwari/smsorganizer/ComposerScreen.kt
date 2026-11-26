@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.vibhavtiwari.smsorganizer.core.SmsSendStatus
 import com.vibhavtiwari.smsorganizer.core.smsDestination
 import com.vibhavtiwari.smsorganizer.telephony.CarrierSmsSender
+import com.vibhavtiwari.smsorganizer.telephony.ScheduledSmsService
 import com.vibhavtiwari.smsorganizer.telephony.SmsLine
 import com.vibhavtiwari.smsorganizer.telephony.SmsSubmission
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +36,14 @@ import kotlinx.coroutines.withContext
 private data class ApprovedDraft(val number: String, val body: String, val line: SmsLine)
 
 @Composable
-internal fun ComposerScreen(sender: CarrierSmsSender?, onSendStateChanged: () -> Unit, onBusyChanged: (Boolean) -> Unit) {
+internal fun ComposerScreen(
+    sender: CarrierSmsSender?,
+    schedules: ScheduledSmsService,
+    onSendStateChanged: () -> Unit,
+    onScheduled: () -> Unit,
+    onBusyChanged: (Boolean) -> Unit,
+) {
+    var scheduling by remember { mutableStateOf(false) }
     var number by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var lines by remember(sender) { mutableStateOf(emptyList<SmsLine>()) }
@@ -123,11 +131,21 @@ internal fun ComposerScreen(sender: CarrierSmsSender?, onSendStateChanged: () ->
             },
             enabled = sender != null && !busy && validNumber != null && chosen != null && message.isNotBlank(),
         ) { Text(if (risky) "Send another SMS" else "Send SMS") }
+        TextButton(
+            enabled = sender != null && !busy && validNumber != null && chosen != null && message.isNotBlank(),
+            onClick = { scheduling = true },
+        ) { Text("Schedule send") }
         val note = feedback ?: if (sender == null) "Live sending is disabled in this build."
             else if (lines.isEmpty()) "No active SIM is available." else null
         note?.let { Text(it) }
     }
 
+    if (scheduling) {
+        ScheduleSmsDialog(schedules, sender, number, message, selectedId, onClose = { scheduling = false }) {
+            scheduling = false
+            onScheduled()
+        }
+    }
     confirmation?.let { draft ->
         AlertDialog(
             onDismissRequest = { confirmation = null },

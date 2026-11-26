@@ -34,9 +34,16 @@ retries automatically, and does not treat a carrier send result as proof of
 delivery.
 
 The app still cannot request the default role and does not declare SMS, MMS
-or phone-state permissions. The only new receiver is a private callback target
-for future sends; there is no carrier-delivery receiver. Only the XML archive
-flow is available in this build. Do not use this build as a messaging replacement.
+or phone-state permissions. Carrier-delivery receiver code is not registered.
+The XML archive remains the only inbox available in this build, and both
+features below require the complete default-SMS path before live use.
+
+- [Schedule Send](docs/schedule-send.md) adds an on-device SMS queue with a date,
+  time and explicit SIM, including edit/cancel and send status.
+- [Verification code notifications](docs/otp-notifications.md) add an optional
+  lock-screen preview for clearly identified incoming SMS codes.
+
+Do not use this build as a messaging replacement.
 
 Before enabling an opt-in lab build, test synthetic single and multipart SMS,
 restricted/missing SIM, carrier rejection, early process death, partial or

@@ -18,6 +18,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.vibhavtiwari.smsorganizer.telephony.ScheduledSmsService
 import com.vibhavtiwari.smsorganizer.telephony.SmsPageKey
 import com.vibhavtiwari.smsorganizer.telephony.SmsStoreResult
 import kotlinx.coroutines.CancellationException
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
             var next by remember { mutableStateOf<SmsPageKey?>(null) }
             var liveLoading by remember { mutableStateOf(false) }
             val deviceSms = remember { LiveSmsSession(this) }
+            val schedules = remember { ScheduledSmsService(this) }
             val scope = rememberCoroutineScope()
             val refresh: (Boolean) -> Unit = refresh@{ older ->
                 if (liveLoading || !deviceSms.canRead()) return@refresh
@@ -72,6 +74,7 @@ class MainActivity : ComponentActivity() {
             DisposableEffect(deviceSms) {
                 val lifecycleObserver = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_RESUME) {
+                        scope.launch(Dispatchers.IO) { runCatching { schedules.restore() } }
                         val allowed = deviceSms.canRead()
                         if (live != allowed) {
                             messages = emptyList()
@@ -109,7 +112,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
                 InboxScreen(
                     messages, status.ifBlank { null },
-                    onOpenArchive = { open.launch("*/*") }, importing = loading,
+                    onOpenArchive = { open.launch("*/*") }, importing = loading, schedules = schedules,
                     sender = deviceSms.sender.takeIf { live },
                     onSendStateChanged = { refresh(false) },
                     loadMore = if (live && next != null && !liveLoading) { { refresh(true) } } else null,

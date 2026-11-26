@@ -41,6 +41,9 @@ internal fun Context.hasSmsRole(): Boolean {
 internal class CarrierSmsSender(context: Context) {
     private val app = context.applicationContext
 
+    fun hasSendingAccess(): Boolean = app.hasSmsRole() &&
+        hasPermission(Manifest.permission.SEND_SMS) && hasPermission(Manifest.permission.READ_PHONE_STATE)
+
     /** No guessed default or slot-0 fallback, ever. */
     // Release manifest deliberately omits READ_PHONE_STATE until the native path can be enabled.
     @SuppressLint("MissingPermission")
@@ -60,6 +63,17 @@ internal class CarrierSmsSender(context: Context) {
         }
     }
 
+    /** Check the chosen SIM and message without writing or contacting the carrier. */
+    fun validateScheduledDraft(destination: String, message: String, subscriptionId: Int): SmsSubmission? {
+        if (smsDestination(destination) == null || message.isBlank() || message.length > MAX_TEXT_CHARS) {
+            return SmsSubmission.InvalidMessage
+        }
+        if (!hasSendingAccess()) return SmsSubmission.NotAuthorised
+        if (activeLines().none { it.subscriptionId == subscriptionId }) return SmsSubmission.ChooseActiveSim
+        val count = runCatching { managerForLine(subscriptionId)?.divideMessage(message)?.size }.getOrNull()
+        return if (count != null && count in 1..MAX_SMS_PARTS) null else SmsSubmission.InvalidMessage
+    }
+
     /**
      * To be called on an IO thread after a deliberately confirmed compose action. Queue in
      * the system provider before contacting the carrier. Do not retry if the outcome is unknown.
@@ -67,7 +81,7 @@ internal class CarrierSmsSender(context: Context) {
     fun sendConfirmed(destination: String, message: String, subscriptionId: Int): SmsSubmission {
         val number = smsDestination(destination) ?: return SmsSubmission.InvalidMessage
         if (message.isBlank() || message.length > MAX_TEXT_CHARS) return SmsSubmission.InvalidMessage
-        if (!app.hasSmsRole() || !hasPermission(Manifest.permission.SEND_SMS)) return SmsSubmission.NotAuthorised
+        if (!hasSendingAccess()) return SmsSubmission.NotAuthorised
         if (activeLines().none { it.subscriptionId == subscriptionId }) return SmsSubmission.ChooseActiveSim
 
         val manager = try { managerForLine(subscriptionId) } catch (_: RuntimeException) { null }

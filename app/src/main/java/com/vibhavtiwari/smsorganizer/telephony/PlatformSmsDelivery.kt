@@ -2,6 +2,7 @@ package com.vibhavtiwari.smsorganizer.telephony
 
 import android.content.Intent
 import android.net.Uri
+import com.vibhavtiwari.smsorganizer.core.IncomingSms
 import android.provider.Telephony
 import android.telephony.SubscriptionManager
 import com.vibhavtiwari.smsorganizer.core.SmsAssembly
@@ -9,7 +10,7 @@ import com.vibhavtiwari.smsorganizer.core.SmsSegment
 import com.vibhavtiwari.smsorganizer.core.assembleIncomingSms
 
 internal sealed interface SmsDeliveryResult {
-    data class Stored(val row: Uri) : SmsDeliveryResult
+    data class Stored(val row: Uri, val message: IncomingSms) : SmsDeliveryResult
     data object WrongAction : SmsDeliveryResult
     data object Malformed : SmsDeliveryResult
     data object StoreUnavailable : SmsDeliveryResult
@@ -37,7 +38,7 @@ internal fun persistPlatformSmsDelivery(
         ?: return SmsDeliveryResult.Malformed
     val subscriptionId = subscriptionFromDelivery(intent)
     return when (val result = store.insertIncoming(decoded.message, receivedAtMillis, subscriptionId)) {
-        is SmsStoreResult.Ok -> SmsDeliveryResult.Stored(result.value)
+        is SmsStoreResult.Ok -> SmsDeliveryResult.Stored(result.value, decoded.message)
         else -> SmsDeliveryResult.StoreUnavailable
     }
 }

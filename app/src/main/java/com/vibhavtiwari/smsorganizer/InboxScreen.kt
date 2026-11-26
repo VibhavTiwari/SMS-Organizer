@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -32,7 +34,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vibhavtiwari.smsorganizer.core.Category
+import com.vibhavtiwari.smsorganizer.otp.OtpNotificationScreen
 import com.vibhavtiwari.smsorganizer.telephony.CarrierSmsSender
+import com.vibhavtiwari.smsorganizer.telephony.ScheduledSmsService
 
 internal data class InboxMessage(
     val id: Long,
@@ -69,6 +73,7 @@ internal fun InboxScreen(
     status: String?,
     onOpenArchive: () -> Unit,
     importing: Boolean,
+    schedules: ScheduledSmsService,
     sender: CarrierSmsSender? = null,
     onSendStateChanged: () -> Unit = {},
     loadMore: (() -> Unit)? = null,
@@ -77,9 +82,14 @@ internal fun InboxScreen(
     var query by remember { mutableStateOf("") }
     var screen by remember { mutableStateOf("inbox") }
     var address by remember { mutableStateOf("") }
+    var menuOpen by remember { mutableStateOf(false) }
     var sendPending by remember { mutableStateOf(false) }
+    val backToInbox = {
+        if (screen == "scheduled") onSendStateChanged()
+        screen = "inbox"
+    }
     BackHandler(enabled = screen != "inbox") {
-        if (!sendPending) screen = "inbox"
+        if (!sendPending) backToInbox()
     }
     val active = tabLabels.firstOrNull { it.first?.name == activeName }?.first
     Scaffold(
@@ -88,13 +98,23 @@ internal fun InboxScreen(
                 title = { Text(when (screen) {
                     "thread" -> address
                     "compose" -> "New message"
+                    "scheduled" -> "Scheduled"
+                    "notifications" -> "Notifications"
                     else -> "SMS Organizer"
                 }) },
                 actions = {
-                    if (screen == "inbox" && sender == null) TextButton(enabled = !importing, onClick = onOpenArchive) { Text("Open export") }
+                    if (screen == "inbox") {
+                        TextButton(onClick = { menuOpen = true }) { Text("More") }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(text = { Text("Scheduled messages") }, onClick = { menuOpen = false; screen = "scheduled" })
+                            DropdownMenuItem(text = { Text("Notifications") }, onClick = { menuOpen = false; screen = "notifications" })
+                            if (sender == null) DropdownMenuItem(text = { Text("Open export") }, enabled = !importing,
+                                onClick = { menuOpen = false; onOpenArchive() })
+                        }
+                    }
                 },
                 navigationIcon = {
-                    if (screen != "inbox") TextButton(enabled = !sendPending, onClick = { screen = "inbox" }) { Text("Back") }
+                    if (screen != "inbox") TextButton(enabled = !sendPending, onClick = backToInbox) { Text("Back") }
                 },
             )
         },
@@ -107,7 +127,9 @@ internal fun InboxScreen(
         Column(Modifier.fillMaxSize().padding(insets)) {
             when (screen) {
                 "thread" -> MessageList(inboxResults(messages.filter { it.address == address }, null, ""), null)
-                "compose" -> ComposerScreen(sender, onSendStateChanged) { sendPending = it }
+                "scheduled" -> ScheduledSmsScreen(schedules, sender)
+                "notifications" -> OtpNotificationScreen()
+                "compose" -> ComposerScreen(sender, schedules, onSendStateChanged, { screen = "scheduled" }) { sendPending = it }
                 else -> {
                     OutlinedTextField(
                         value = query, onValueChange = { query = it },
