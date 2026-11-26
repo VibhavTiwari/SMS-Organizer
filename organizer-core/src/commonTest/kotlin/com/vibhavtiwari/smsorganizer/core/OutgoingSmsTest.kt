@@ -20,6 +20,14 @@ class OutgoingSmsTest {
     }
 
     @Test
+    fun onlyAcceptsOneUnambiguousDestination() {
+        assertEquals("+12025550131", smsDestination("+1 (202) 555-0131"))
+        assertEquals("02079460921", smsDestination("020 7946 0921"))
+        listOf("112", "12+3456", "2025550131,2025550132", "2025550131 ext 2", "2025550131;221", "1-800-FLOWERS")
+            .forEach { assertEquals(null, smsDestination(it)) }
+    }
+
+    @Test
     fun neverTreatsTimeoutOrConflictAsSafeToRetry() {
         assertEquals(SmsSendStatus.UNCERTAIN, summariseSmsSend(2, listOf(0 to accepted), timedOut = true))
         assertEquals(SmsSendStatus.UNCERTAIN, summariseSmsSend(1, listOf(0 to rejected, 0 to accepted)))

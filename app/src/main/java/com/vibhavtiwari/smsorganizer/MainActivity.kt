@@ -10,11 +10,16 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.vibhavtiwari.smsorganizer.telephony.SmsPageKey
+import com.vibhavtiwari.smsorganizer.telephony.SmsStoreResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -28,7 +33,58 @@ class MainActivity : ComponentActivity() {
             var messages by remember { mutableStateOf(emptyList<InboxMessage>()) }
             var status by remember { mutableStateOf("Open an SMS XML export to view it on this device.") }
             var loading by remember { mutableStateOf(false) }
+            var live by remember { mutableStateOf(false) }
+            var next by remember { mutableStateOf<SmsPageKey?>(null) }
+            var liveLoading by remember { mutableStateOf(false) }
+            val deviceSms = remember { LiveSmsSession(this) }
             val scope = rememberCoroutineScope()
+            val refresh: (Boolean) -> Unit = refresh@{ older ->
+                if (liveLoading || !deviceSms.canRead()) return@refresh
+                val oldPage = if (older) next ?: return@refresh else null
+                liveLoading = true
+                scope.launch {
+                    try {
+                        when (val result = withContext(Dispatchers.IO) { deviceSms.page(oldPage) }) {
+                            is SmsStoreResult.Ok -> {
+                                val page = result.value.toInboxMessages()
+                                if (!deviceSms.canRead()) {
+                                    messages = emptyList()
+                                    next = null
+                                    live = false
+                                } else {
+                                    messages = if (older) (messages + page).distinctBy { it.id } else page
+                                    next = result.value.next
+                                    status = ""
+                                }
+                            }
+                            else -> {
+                                messages = emptyList()
+                                next = null
+                                live = false
+                                status = "Device inbox access is unavailable. You can still open an export."
+                            }
+                        }
+                    } finally {
+                        liveLoading = false
+                    }
+                }
+            }
+            DisposableEffect(deviceSms) {
+                val lifecycleObserver = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        val allowed = deviceSms.canRead()
+                        if (live != allowed) {
+                            messages = emptyList()
+                            next = null
+                        }
+                        live = allowed
+                        if (live) refresh(false)
+                        else status = "Open an SMS XML export to view it on this device."
+                    }
+                }
+                lifecycle.addObserver(lifecycleObserver)
+                onDispose { lifecycle.removeObserver(lifecycleObserver) }
+            }
             val open = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
                 if (uri != null && !loading) {
                     loading = true
@@ -51,7 +107,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
-                InboxScreen(messages, status.ifBlank { null }, onOpenArchive = { open.launch("*/*") }, importing = loading)
+                InboxScreen(
+                    messages, status.ifBlank { null },
+                    onOpenArchive = { open.launch("*/*") }, importing = loading,
+                    sender = deviceSms.sender.takeIf { live },
+                    onSendStateChanged = { refresh(false) },
+                    loadMore = if (live && next != null && !liveLoading) { { refresh(true) } } else null,
+                )
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.vibhavtiwari.smsorganizer
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -11,8 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
@@ -30,10 +29,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vibhavtiwari.smsorganizer.core.Category
+import com.vibhavtiwari.smsorganizer.telephony.CarrierSmsSender
 
 internal data class InboxMessage(
     val id: Long,
@@ -70,11 +69,18 @@ internal fun InboxScreen(
     status: String?,
     onOpenArchive: () -> Unit,
     importing: Boolean,
+    sender: CarrierSmsSender? = null,
+    onSendStateChanged: () -> Unit = {},
+    loadMore: (() -> Unit)? = null,
 ) {
     var activeName by rememberSaveable { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
     var screen by remember { mutableStateOf("inbox") }
     var address by remember { mutableStateOf("") }
+    var sendPending by remember { mutableStateOf(false) }
+    BackHandler(enabled = screen != "inbox") {
+        if (!sendPending) screen = "inbox"
+    }
     val active = tabLabels.firstOrNull { it.first?.name == activeName }?.first
     Scaffold(
         topBar = {
@@ -85,10 +91,10 @@ internal fun InboxScreen(
                     else -> "SMS Organizer"
                 }) },
                 actions = {
-                    if (screen == "inbox") TextButton(enabled = !importing, onClick = onOpenArchive) { Text("Open export") }
+                    if (screen == "inbox" && sender == null) TextButton(enabled = !importing, onClick = onOpenArchive) { Text("Open export") }
                 },
                 navigationIcon = {
-                    if (screen != "inbox") TextButton(onClick = { screen = "inbox" }) { Text("Back") }
+                    if (screen != "inbox") TextButton(enabled = !sendPending, onClick = { screen = "inbox" }) { Text("Back") }
                 },
             )
         },
@@ -101,7 +107,7 @@ internal fun InboxScreen(
         Column(Modifier.fillMaxSize().padding(insets)) {
             when (screen) {
                 "thread" -> MessageList(inboxResults(messages.filter { it.address == address }, null, ""), null)
-                "compose" -> DraftFields()
+                "compose" -> ComposerScreen(sender, onSendStateChanged) { sendPending = it }
                 else -> {
                     OutlinedTextField(
                         value = query, onValueChange = { query = it },
@@ -118,10 +124,10 @@ internal fun InboxScreen(
                     }
                     if (status != null) Text(status, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     val results = remember(messages, active, query) { inboxResults(messages, active, query) }
-                    if (results.isEmpty() && (messages.isNotEmpty() || status == null)) {
+                    if (results.isEmpty() && loadMore == null && (messages.isNotEmpty() || status == null)) {
                         Text("No matching messages", Modifier.padding(16.dp))
                     } else {
-                        MessageList(results) { message -> address = message.address; screen = "thread" }
+                        MessageList(results, { message -> address = message.address; screen = "thread" }, loadMore)
                     }
                 }
             }
@@ -130,7 +136,7 @@ internal fun InboxScreen(
 }
 
 @Composable
-private fun MessageList(messages: List<InboxMessage>, onOpen: ((InboxMessage) -> Unit)?) {
+private fun MessageList(messages: List<InboxMessage>, onOpen: ((InboxMessage) -> Unit)?, loadMore: (() -> Unit)? = null) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(messages, key = { it.id }) { message ->
             val row = Modifier.fillMaxWidth().then(if (onOpen != null) Modifier.clickable { onOpen(message) } else Modifier)
@@ -140,19 +146,6 @@ private fun MessageList(messages: List<InboxMessage>, onOpen: ((InboxMessage) ->
             }
             HorizontalDivider()
         }
-    }
-}
-
-@Composable
-private fun DraftFields() {
-    // Don't persist draft contents until the platform storage path has been implemented and reviewed.
-    var recipient by androidx.compose.runtime.remember { mutableStateOf("") }
-    var body by androidx.compose.runtime.remember { mutableStateOf("") }
-    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        OutlinedTextField(recipient, { recipient = it }, Modifier.fillMaxWidth(), label = { Text("Recipient") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), singleLine = true)
-        OutlinedTextField(body, { body = it }, Modifier.fillMaxWidth(), label = { Text("Message") }, minLines = 3)
-        Button(onClick = {}, enabled = false) { Text("Send") }
-        Text("SMS sending is not enabled in this development build.")
+        if (loadMore != null) item { TextButton(onClick = loadMore) { Text("Load older messages") } }
     }
 }

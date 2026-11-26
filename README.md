@@ -26,12 +26,21 @@ Use synthetic test data in this repository. Never commit or upload a personal ex
 
 ### Live messaging work in progress
 
-The native layer now knows how to page the system SMS inbox and save one complete
-inbound SMS, including multipart text. It checks ownership of the Android SMS
-role before system inbox access. This path is intentionally not registered in
-the manifest. It does not change the default app, request sensitive permissions,
-or route carrier messages to this build. Only the XML archive flow is usable.
-The shared core also distinguishes a partial outgoing SMS from a failed or
-unconfirmed one. It does not automatically retry any send, and it does not
-claim carrier acceptance is a delivery receipt. The device send path is not
-switched on.
+The native SMS layer now connects a paged system inbox and a composer to
+Android's messaging APIs. A send requires the SMS role, permission, an active
+SIM and a confirmation showing the recipient and SIM. It records status for
+each segment without copying the message body to the app's send journal, never
+retries automatically, and does not treat a carrier send result as proof of
+delivery.
+
+The app still cannot request the default role and does not declare SMS, MMS
+or phone-state permissions. The only new receiver is a private callback target
+for future sends; there is no carrier-delivery receiver. Only the XML archive
+flow is available in this build. Do not use this build as a messaging replacement.
+
+Before enabling an opt-in lab build, test synthetic single and multipart SMS,
+restricted/missing SIM, carrier rejection, early process death, partial or
+unknown send, photo and group MMS in both directions, and switching back to the
+previous Android messaging default. Keep any real texts on the device.
+
+See [MMS groundwork and release gate](docs/mms.md) for current photo and group-message coverage and known limits.

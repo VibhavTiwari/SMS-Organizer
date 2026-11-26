@@ -28,3 +28,11 @@ fun summariseSmsSend(
         else -> SmsSendStatus.PARTIALLY_SENT
     }
 }
+
+/** Convert visual formatting only. Refuse dialing controls, multi-recipient input and short codes. */
+fun smsDestination(value: String): String? {
+    if (value.length > 64 || value.any { it !in "0123456789+ ()-\u00a0" }) return null
+    val clean = value.filter { it in '0'..'9' || it == '+' }
+    val digits = clean.removePrefix("+")
+    return clean.takeIf { digits.length in 5..15 && digits.all { ch -> ch in '0'..'9' } }
+}
