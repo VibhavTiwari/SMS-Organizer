@@ -18,6 +18,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.vibhavtiwari.smsorganizer.reminders.ReminderService
 import com.vibhavtiwari.smsorganizer.telephony.ScheduledSmsService
 import com.vibhavtiwari.smsorganizer.telephony.SmsPageKey
 import com.vibhavtiwari.smsorganizer.telephony.SmsStoreResult
@@ -48,7 +49,7 @@ class MainActivity : ComponentActivity() {
                     try {
                         when (val result = withContext(Dispatchers.IO) { deviceSms.page(oldPage) }) {
                             is SmsStoreResult.Ok -> {
-                                val page = result.value.toInboxMessages()
+                                val page = withContext(Dispatchers.IO) { result.value.toInboxMessages() }
                                 if (!deviceSms.canRead()) {
                                     messages = emptyList()
                                     next = null
@@ -74,7 +75,10 @@ class MainActivity : ComponentActivity() {
             DisposableEffect(deviceSms) {
                 val lifecycleObserver = LifecycleEventObserver { _, event ->
                     if (event == Lifecycle.Event.ON_RESUME) {
-                        scope.launch(Dispatchers.IO) { runCatching { schedules.restore() } }
+                        scope.launch(Dispatchers.IO) {
+                            runCatching { schedules.restore() }
+                            runCatching { ReminderService(this@MainActivity).restore() }
+                        }
                         val allowed = deviceSms.canRead()
                         if (live != allowed) {
                             messages = emptyList()
@@ -111,7 +115,7 @@ class MainActivity : ComponentActivity() {
             }
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
                 InboxScreen(
-                    messages, status.ifBlank { null },
+                    messages, status.ifBlank { null }, live = live,
                     onOpenArchive = { open.launch("*/*") }, importing = loading, schedules = schedules,
                     sender = deviceSms.sender.takeIf { live },
                     onSendStateChanged = { refresh(false) },

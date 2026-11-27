@@ -25,6 +25,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +35,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import com.vibhavtiwari.smsorganizer.reminders.ReminderAction
+import com.vibhavtiwari.smsorganizer.reminders.RemindersScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.vibhavtiwari.smsorganizer.core.Category
 import com.vibhavtiwari.smsorganizer.otp.OtpNotificationScreen
 import com.vibhavtiwari.smsorganizer.telephony.CarrierSmsSender
@@ -44,6 +52,7 @@ internal data class InboxMessage(
     val body: String,
     val sentAtMillis: Long,
     val category: Category,
+    val incoming: Boolean = true,
 )
 
 private val tabLabels = listOf(
@@ -69,8 +78,9 @@ internal fun inboxResults(messages: List<InboxMessage>, category: Category?, que
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun InboxScreen(
-    messages: List<InboxMessage>,
+    rawMessages: List<InboxMessage>,
     status: String?,
+    live: Boolean,
     onOpenArchive: () -> Unit,
     importing: Boolean,
     schedules: ScheduledSmsService,
@@ -84,6 +94,33 @@ internal fun InboxScreen(
     var address by remember { mutableStateOf("") }
     var menuOpen by remember { mutableStateOf(false) }
     var sendPending by remember { mutableStateOf(false) }
+    var editingCategory by remember(rawMessages, live) { mutableStateOf<InboxMessage?>(null) }
+    var categoryRevision by remember { mutableStateOf(0) }
+    var categoryError by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val overrides = remember(context) { CategoryOverrides(context) }
+    var messages by remember(rawMessages, live) { mutableStateOf<List<InboxMessage>?>(null) }
+    LaunchedEffect(rawMessages, live, categoryRevision) {
+        messages = withContext(Dispatchers.IO) { overrides.applyTo(rawMessages, live) }
+    }
+    val classified = messages.orEmpty()
+    val hygiene = rememberInboxHygiene(classified, live)
+    val visible = hygiene.inboxMessages.orEmpty()
+    editingCategory?.let { message ->
+        CategoryPicker(
+            current = message.category,
+            onSelect = { category ->
+                editingCategory = null
+                categoryError = false
+                scope.launch {
+                    val saved = withContext(Dispatchers.IO) { overrides.set(message, live, category) }
+                    if (saved) categoryRevision++ else categoryError = true
+                }
+            },
+            onDismiss = { editingCategory = null },
+        )
+    }
     val backToInbox = {
         if (screen == "scheduled") onSendStateChanged()
         screen = "inbox"
@@ -100,6 +137,10 @@ internal fun InboxScreen(
                     "compose" -> "New message"
                     "scheduled" -> "Scheduled"
                     "notifications" -> "Notifications"
+                    "reminders" -> "Reminders"
+                    "spam" -> "Spam"
+                    "cleanup" -> "Smart cleanup"
+                    "hidden" -> "Hidden messages"
                     else -> "SMS Organizer"
                 }) },
                 actions = {
@@ -107,6 +148,10 @@ internal fun InboxScreen(
                         TextButton(onClick = { menuOpen = true }) { Text("More") }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(text = { Text("Scheduled messages") }, onClick = { menuOpen = false; screen = "scheduled" })
+                            DropdownMenuItem(text = { Text("Spam") }, onClick = { menuOpen = false; screen = "spam" })
+                            DropdownMenuItem(text = { Text("Smart cleanup") }, onClick = { menuOpen = false; screen = "cleanup" })
+                            DropdownMenuItem(text = { Text("Hidden messages") }, onClick = { menuOpen = false; screen = "hidden" })
+                            DropdownMenuItem(text = { Text("Reminders") }, onClick = { menuOpen = false; screen = "reminders" })
                             DropdownMenuItem(text = { Text("Notifications") }, onClick = { menuOpen = false; screen = "notifications" })
                             if (sender == null) DropdownMenuItem(text = { Text("Open export") }, enabled = !importing,
                                 onClick = { menuOpen = false; onOpenArchive() })
@@ -125,8 +170,23 @@ internal fun InboxScreen(
         },
     ) { insets ->
         Column(Modifier.fillMaxSize().padding(insets)) {
+            if (categoryError) Text("Couldn’t save the category. Try again.", Modifier.padding(16.dp))
             when (screen) {
-                "thread" -> MessageList(inboxResults(messages.filter { it.address == address }, null, ""), null)
+                "thread" -> MessageList(
+                    inboxResults(visible.filter { it.address == address }, null, ""),
+                    null, loadMore,
+                    rowActions = { message ->
+                        TextButton(onClick = { editingCategory = message }) { Text("Change category") }
+                        if (message.incoming) {
+                            ReminderAction(message)
+                            ReportSpamButton(hygiene, message, onReported = { screen = "spam" })
+                        }
+                    },
+                )
+                "reminders" -> RemindersScreen()
+                "spam" -> InboxHygieneScreen(hygiene, InboxHygieneTab.SPAM, loadMore)
+                "cleanup" -> InboxHygieneScreen(hygiene, InboxHygieneTab.CLEANUP, loadMore)
+                "hidden" -> InboxHygieneScreen(hygiene, InboxHygieneTab.HIDDEN, loadMore)
                 "scheduled" -> ScheduledSmsScreen(schedules, sender)
                 "notifications" -> OtpNotificationScreen()
                 "compose" -> ComposerScreen(sender, schedules, onSendStateChanged, { screen = "scheduled" }) { sendPending = it }
@@ -145,8 +205,14 @@ internal fun InboxScreen(
                         }
                     }
                     if (status != null) Text(status, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                    val results = remember(messages, active, query) { inboxResults(messages, active, query) }
-                    if (results.isEmpty() && loadMore == null && (messages.isNotEmpty() || status == null)) {
+                    val results = remember(visible, active, query) { inboxResults(visible, active, query) }
+                    val hygieneError = hygiene.error
+                    if (hygieneError != null) Text(hygieneError, Modifier.padding(16.dp))
+                    if (messages == null || hygiene.inboxMessages == null) {
+                        if (hygieneError == null && rawMessages.isNotEmpty()) {
+                            Text("Organizing messages…", Modifier.padding(16.dp))
+                        }
+                    } else if (results.isEmpty() && loadMore == null && (classified.isNotEmpty() || status == null)) {
                         Text("No matching messages", Modifier.padding(16.dp))
                     } else {
                         MessageList(results, { message -> address = message.address; screen = "thread" }, loadMore)
@@ -158,13 +224,19 @@ internal fun InboxScreen(
 }
 
 @Composable
-private fun MessageList(messages: List<InboxMessage>, onOpen: ((InboxMessage) -> Unit)?, loadMore: (() -> Unit)? = null) {
+private fun MessageList(
+    messages: List<InboxMessage>,
+    onOpen: ((InboxMessage) -> Unit)?,
+    loadMore: (() -> Unit)? = null,
+    rowActions: (@Composable (InboxMessage) -> Unit)? = null,
+) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(messages, key = { it.id }) { message ->
             val row = Modifier.fillMaxWidth().then(if (onOpen != null) Modifier.clickable { onOpen(message) } else Modifier)
             Column(row.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Text(message.address, style = MaterialTheme.typography.titleSmall)
                 Text(message.body, maxLines = if (onOpen != null) 2 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                rowActions?.invoke(message)
             }
             HorizontalDivider()
         }

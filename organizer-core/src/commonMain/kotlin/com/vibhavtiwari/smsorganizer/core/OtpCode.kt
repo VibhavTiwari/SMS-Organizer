@@ -20,8 +20,12 @@ private val leadingAlternative = Regex("""$digits[ \t]*(?:/|\bor\b|\band\b)[ \t]
  * Deliberately narrower than inbox categorisation: extract a single clearly labelled numeric code
  * only from a service-style SMS sender. A sender's format is not proof of authenticity.
  */
-fun extractNotificationOtp(sender: String, text: String): String? {
-    if (!serviceSender.matches(sender) || text.length !in 1..2_048) return null
+fun extractNotificationOtp(sender: String, text: String): String? =
+    if (serviceSender.matches(sender)) extractLabelledOtp(text) else null
+
+/** Used by inbox rules without changing sender trust at the notification boundary. */
+internal fun extractLabelledOtp(text: String): String? {
+    if (text.length !in 1..2_048) return null
     val normalized = text.replace('\u00a0', ' ').replace('\u202f', ' ')
     val codes = mutableSetOf<String>()
     for (match in afterLabel.findAll(normalized) + beforeLabel.findAll(normalized)) {

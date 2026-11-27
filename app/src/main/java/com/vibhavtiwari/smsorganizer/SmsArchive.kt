@@ -2,8 +2,8 @@ package com.vibhavtiwari.smsorganizer
 
 import android.util.Xml
 import com.vibhavtiwari.smsorganizer.core.MessageInput
-import com.vibhavtiwari.smsorganizer.core.MessageSource
 import com.vibhavtiwari.smsorganizer.core.classify
+import com.vibhavtiwari.smsorganizer.core.messageSource
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.io.IOException
@@ -12,7 +12,6 @@ import org.xmlpull.v1.XmlPullParser
 private const val MAX_MESSAGES = 50_000
 private const val MAX_ARCHIVE_BYTES = 32L * 1024 * 1024
 private const val MAX_MESSAGE_CHARACTERS = 20_000
-private val serviceAddress = Regex("""[A-Z]{2}-[A-Z0-9]{6}(?:-[A-Z])?""", RegexOption.IGNORE_CASE)
 
 /** Reads the common <smses><sms …/> XML format. This is an inbox preview, not device restore. */
 internal fun readSmsArchive(input: InputStream): List<InboxMessage> {
@@ -33,12 +32,11 @@ internal fun readSmsArchive(input: InputStream): List<InboxMessage> {
                 val sentAt = parser.getAttributeValue(null, "date")?.toLongOrNull()?.takeIf { it >= 0 } ?: continue
                 val direction = parser.getAttributeValue(null, "type")
                 if (direction != "1" && direction != "2") continue
-                val source = when {
-                    direction == "2" -> MessageSource.KNOWN_PERSON
-                    serviceAddress.matches(address) -> MessageSource.SERVICE
-                    else -> MessageSource.UNKNOWN
-                }
-                messages += InboxMessage(messages.size.toLong(), address, body, sentAt, classify(MessageInput(body, source)).category)
+                val source = messageSource(address, isOutgoing = direction == "2")
+                messages += InboxMessage(
+                    messages.size.toLong(), address, body, sentAt,
+                    classify(MessageInput(body, source)).category, incoming = direction == "1",
+                )
             }
             XmlPullParser.END_DOCUMENT -> return messages
         }

@@ -5,8 +5,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.Telephony
 import com.vibhavtiwari.smsorganizer.core.MessageInput
-import com.vibhavtiwari.smsorganizer.core.MessageSource
 import com.vibhavtiwari.smsorganizer.core.classify
+import com.vibhavtiwari.smsorganizer.core.messageSource
 import com.vibhavtiwari.smsorganizer.telephony.CarrierSmsSender
 import com.vibhavtiwari.smsorganizer.telephony.DeviceSmsPage
 import com.vibhavtiwari.smsorganizer.telephony.DeviceSmsStore
@@ -28,12 +28,10 @@ internal class LiveSmsSession(context: Context) {
 internal fun DeviceSmsPage.toInboxMessages(): List<InboxMessage> = messages.map {
     val address = it.senderOrRecipient.orEmpty()
     val body = it.body.orEmpty()
-    val source = when {
-        it.type == Telephony.Sms.MESSAGE_TYPE_SENT -> MessageSource.KNOWN_PERSON
-        serviceAddress.matches(address) -> MessageSource.SERVICE
-        else -> MessageSource.UNKNOWN
-    }
-    InboxMessage(it.id, address.ifBlank { "Unknown sender" }, body, it.dateMillis, classify(MessageInput(body, source)).category)
+    val incoming = it.type == Telephony.Sms.MESSAGE_TYPE_INBOX
+    val source = messageSource(address, isOutgoing = !incoming)
+    InboxMessage(
+        it.id, address.ifBlank { "Unknown sender" }, body, it.dateMillis,
+        classify(MessageInput(body, source)).category, incoming = incoming,
+    )
 }
-
-private val serviceAddress = Regex("""[A-Z]{2}-[A-Z0-9]{6}(?:-[A-Z])?""", RegexOption.IGNORE_CASE)
