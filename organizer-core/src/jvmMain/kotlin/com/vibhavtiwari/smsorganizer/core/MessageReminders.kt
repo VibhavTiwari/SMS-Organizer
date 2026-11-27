@@ -48,6 +48,8 @@ private val explicitTimeZone = Regex(
     """(?<![a-z0-9])(?:UTC|GMT|[ECMP][SD]T|CET|CEST|BST|A[EW][SD]T|JST|KST|IST)(?![a-z])""",
     RegexOption.IGNORE_CASE,
 )
+// A clock followed by a signed offset or a separated UTC designator is not a local clock.
+private val departureOffsetSuffix = Regex("""[\s\u00a0]*(?:[+\-−±][\s\u00a0]*[0-9]|z\b)""", RegexOption.IGNORE_CASE)
 private val indianTimeZones = setOf("Asia/Kolkata", "Asia/Calcutta")
 private val monthlyNames = listOf(
     "january", "february", "march", "april", "may", "june", "july", "august",
@@ -115,6 +117,7 @@ fun extractMessageReminder(
             val date = dates.distinct().singleOrNull() ?: return null
             val time = parseTime(match.groupValues[2]) ?: return null
             // Do not silently reinterpret a foreign or offset timezone as the handset's timezone.
+            if (departureOffsetSuffix.matchAt(body, match.range.last + 1) != null) return null
             if (explicitTimeZone.findAll(body).any {
                     !it.value.equals("IST", ignoreCase = true) || zone.id !in indianTimeZones
                 }

@@ -33,6 +33,16 @@ class MessageRemindersTest {
     }
 
     @Test
+    fun trainRejectsDepartureOffsetsRatherThanTreatingThemAsDeviceLocal() {
+        val prefix = "IRCTC: Train 12345. Journey date 2026-12-05. Departure time "
+        val local = assertNotNull(extractMessageReminder(prefix + "16:30.", now, zone))
+        assertEquals(LocalDateTime.parse("2026-12-05T15:30"), local.remindAt)
+        for (time in listOf("16:30+00:00", "16:30 -0500", "16:30−05:00", "16:30 +05", "16:30 Z", "4:30 PM+00:00")) {
+            assertNull(extractMessageReminder(prefix + time + ".", now, zone), time)
+        }
+    }
+
+    @Test
     fun explicitTrainDateAndTimeCanShareALabel() {
         val candidate = assertNotNull(extractMessageReminder(
             "Train No. 12345 departs on 29-Nov-2026 at 06:10.", now, zone,
